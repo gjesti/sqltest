@@ -1,0 +1,107 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
+
+	_ "github.com/denisenkom/go-mssqldb"
+)
+
+func main() {
+
+	type Arrangement struct {
+		Dato      string `json:"DATO"`
+		Film      string `json:"FILM"`
+		Sal       string `json:"SAL"`
+		Land      string `json:"LAND"`
+		ImdbLink  string `json:"IMDBLINK"`
+		Stig      string `json:"stig"`
+		Paal      string `json:"paal"`
+		Terjeb    string `json:"terjeb"`
+		Tor       string `json:"tor"`
+		Tom       string `json:"tom"`
+		Eivind    string `json:"eivind"`
+		Olav      string `json:"olav"`
+		Finn      string `json:"finn"`
+		Molde     string `json:"molde"`
+		Pallen    string `json:"pallen"`
+		SwingStig string `json:"swing_stig"`
+		Bengt     string `json:"bengt"`
+	}
+
+	var query string
+	var a Arrangement
+
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config:  aws.Config{Region: aws.String("eu-west-1")},
+		Profile: "sqsuser",
+	}))
+
+	svc := sqs.New(sess)
+
+	// URL to our queue. Purge all elements to start.
+
+	qURL := "https://sqs.eu-west-1.amazonaws.com/947879583077/torsdagskino_sqs"
+
+	query = "select convert(varchar, dato, 23), film, sal, land, imdblink,"
+	query += "      iif(stig is null, 0, stig),"
+	query += "      iif(paal is null, 0, paal),"
+	query += "      iif(terjeb is null, 0, terjeb),"
+	query += "      iif(tor is null, 0, tor),"
+	query += "      iif(tom is null, 0, tom),"
+	query += "      iif(eivind is null, 0, eivind),"
+	query += "      iif(olav is null, 0, olav),"
+	query += "      iif(finn is null, 0, finn),"
+	query += "      iif(molde is null, 0, molde),"
+	query += "      iif(pallen is null, 0, pallen),"
+	query += "      iif(swing_stig is null, 0, swing_stig),"
+	query += "      iif(bengt is null, 0, bengt)"
+	query += " from torsdagskino.dbo.filmlogg"
+
+	condb, errdb := sql.Open("mssql", "server=10.21.93.25;user id=reporting;password=reporting;")
+	if errdb != nil {
+		fmt.Println(" Error open db:", errdb.Error())
+	}
+
+	rows, err := condb.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for rows.Next() {
+		err := rows.Scan(&a.Dato, &a.Film, &a.Sal, &a.Land, &a.ImdbLink,
+			&a.Stig, &a.Paal, &a.Terjeb, &a.Tor, &a.Tom, &a.Eivind, &a.Olav, &a.Finn, &a.Molde, &a.Pallen, &a.SwingStig, &a.Bengt)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		ut, _ := json.Marshal(a)
+		fmt.Println(string(ut))
+
+		result, err := svc.SendMessage(&sqs.SendMessageInput{
+			DelaySeconds: aws.Int64(10),
+			MessageAttributes: map[string]*sqs.MessageAttributeValue{
+				"Dato":     &sqs.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(a.Dato))},
+				"Film":     &sqs.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(a.Film))},
+				"Sal":      &sqs.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(a.Sal))},
+				"Land":     &sqs.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(a.Land))},
+				"ImdbLink": &sqs.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(a.ImdbLink))},
+			}, MessageBody: aws.String(string(ut)),
+			QueueUrl: &qURL,
+		})
+
+		if err != nil {
+			fmt.Println("Error", err)
+			return
+		}
+		fmt.Println("Success", *result.MessageId)
+
+	}
+	defer condb.Close()
+
+}

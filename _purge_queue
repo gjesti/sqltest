@@ -1,0 +1,1 @@
+aws sqs purge-queue --queue-url https://eu-west-1.queue.amazonaws.com/947879583077/torsdagskino_sqs --profile sqsuser --region eu-west-1
